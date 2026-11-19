@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mahi and Devans Co. - Factory Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { padding-bottom: 80px; background-color: #f8fafc; font-family: sans-serif; }
+        @media (min-width: 768px) { body { padding-bottom: 0; padding-top: 70px; } }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        #toast { pointer-events: none; transition: opacity 0.3s ease; }
+        .master-panel { display: none; }
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        
+        /* A4 Size PDF Perfect Fit (Medium Size Fix) */
+        .payslip-box { 
+            display: none; 
+            width: 190mm;
+            box-sizing: border-box; 
+            padding: 10px; 
+            margin: 0 auto; 
+            background: white; 
+            color: black; 
+            font-size: 13px;
+        }
+        .payslip-box table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .payslip-box th, .payslip-box td { border: 1px solid black; padding: 5px; text-align: left; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <!-- Desktop Navbar & Month Selector -->
+    <nav class="hidden md:flex fixed top-0 w-full bg-indigo-900 text-white shadow-md z-50 px-6 py-4 justify-between items-center">
+        <div class="font-bold text-xl flex items-center gap-2">
+            <i class="fa-solid fa-industry text-yellow-400"></i> Mahi and Devans Co.
+        </div>
+        <div class="flex items-center gap-2 bg-indigo-800 px-3 py-1 rounded-lg border border-indigo-700">
+            <i class="fa-solid fa-calendar-days text-yellow-400"></i>
+            <input type="month" id="app_month" onchange="refreshAllData()" class="bg-transparent text-white font-bold outline-none cursor-pointer">
+        </div>
+        <div class="flex space-x-6 font-medium text-sm">
+            <button onclick="switchTab('dashboard')" class="hover:text-yellow-300 transition">Dashboard & Analytics</button>
+            <button onclick="switchTab('attendance')" class="hover:text-yellow-300 transition">Attendance</button>
+            <button onclick="switchTab('advance')" class="hover:text-yellow-300 transition">Advance (Upad)</button>
+            <button onclick="switchTab('reports')" class="hover:text-yellow-300 transition">Reports</button>
+            <button onclick="switchTab('master')" class="hover:text-yellow-300 transition text-yellow-200"><i class="fa-solid fa-gear"></i> Settings</button>
+        </div>
+    </nav>
+
+    <!-- Mobile Month Selector -->
+    <div class="md:hidden bg-indigo-900 p-3 flex justify-between items-center text-white">
+        <div class="font-bold"><i class="fa-solid fa-industry text-yellow-400"></i> Mahi & Devans Co.</div>
+        <input type="month" id="app_month_mob" onchange="document.getElementById('app_month').value=this.value; refreshAllData();" class="bg-indigo-800 text-white p-1 rounded font-bold border border-indigo-700 text-sm">
+    </div>
+
+    <main class="p-4 md:p-6 max-w-7xl mx-auto z-10 relative">
+
+        <!-- 1. DASHBOARD & ANALYTICS -->
+        <section id="dashboard" class="tab-content active">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-slate-800">Dashboard (<span id="dash_month_label"></span>)</h2>
+                <div class="bg-indigo-100 text-indigo-800 px-4 py-2 rounded-lg font-bold shadow-sm">
+                    Estimated Net Pagar: <span id="dash_total_pagar" class="text-xl">₹0</span>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg text-indigo-800"><i class="fa-solid fa-chart-line"></i> Analytics & Comparing</h3>
+                        <select id="compareChartSelect" onchange="updateCompareChart()" class="border p-2 rounded-lg bg-slate-50 text-sm font-semibold">
+                            <option value="worker">Worker vs Worker (Production)</option>
+                            <option value="machine">Machine vs Machine</option>
+                            <option value="month">Month vs Month (Total Pagar)</option>
+                        </select>
+                    </div>
+                    <div class="relative h-64 w-full"><canvas id="compareChart"></canvas></div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg text-indigo-800"><i class="fa-solid fa-chart-pie"></i> Month Bonus</h3>
+                        <select id="chartWorkerSelect" onchange="updateChart()" class="border p-1.5 rounded-lg bg-slate-50 text-xs font-semibold"></select>
+                    </div>
+                    <div class="relative h-64 w-full"><canvas id="bonusChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <h3 class="font-bold text-lg mb-3 text-emerald-700 bg-emerald-100 p-2 rounded-lg"><i class="fa-solid fa-wallet"></i> Pagar Baki Hai (Net Payable)</h3>
+                    <div id="dashListPositive" class="space-y-3"></div>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg mb-3 text-red-700 bg-red-100 p-2 rounded-lg"><i class="fa-solid fa-circle-exclamation"></i> Zyada Upad Hai (Negative Balance)</h3>
+                    <div id="dashListNegative" class="space-y-3"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. ATTENDANCE ENTRY -->
+        <section id="attendance" class="tab-content">
+            <h2 class="text-2xl font-bold mb-4 text-slate-800">Attendance, Machine & Mix Bonus</h2>
+            <form id="att_form" onsubmit="saveAttendance(event)" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <input type="hidden" id="h_edit_id">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div><label class="block text-sm font-semibold mb-1">Date *</label><input type="date" id="h_date" required class="w-full border p-2.5 rounded-lg bg-slate-50"></div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Primary Worker *</label>
+                        <input type="text" id="search_w1" onkeyup="filterWorkerSelect(this.value, 'h_worker1')" placeholder="🔍 Search Worker..." class="w-full border border-b-0 p-2 text-xs rounded-t-lg bg-indigo-50 outline-none">
+                        <select id="h_worker1" required onchange="showWorkerSummary()" class="w-full border p-2.5 rounded-b-lg bg-slate-50"></select>
+                        <div id="w1_summary" class="text-xs font-bold text-indigo-700 mt-1"></div>
+                    </div>
+
+                    <div><label class="block text-sm font-semibold mb-1 text-indigo-700">Attendance Status *</label>
+                    <select id="h_status" class="w-full border border-indigo-300 p-2.5 rounded-lg bg-indigo-50 font-bold">
+                        <option value="Full">Full Day (Full Salary)</option>
+                        <option value="Half">Half Day (Half Salary)</option>
+                        <option value="Absent">Absent (No Base Salary)</option>
+                    </select></div>
+                    
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1">Payment Mode (Base/Extra) *</label>
+                    <select id="h_mode" onchange="toggleWorker2()" class="w-full border p-2.5 rounded-lg bg-slate-50">
+                        <option value="Normal">Normal (Base + Bonus)</option>
+                        <option value="ExtraStitch">Extra Machine (Stitch Bonus)</option>
+                        <option value="ExtraPagar">Extra Machine (Fix Pagar/Month)</option>
+                        <option value="Shared50">Shared 50-50 (2 Workers = 1 M/C)</option>
+                    </select></div>
+
+                    <div id="worker2_div" class="hidden machine-only-field">
+                        <label class="block text-sm font-semibold mb-1 text-indigo-600">Secondary Worker (50%) *</label>
+                        <input type="text" id="search_w2" onkeyup="filterWorkerSelect(this.value, 'h_worker2')" placeholder="🔍 Search Worker..." class="w-full border border-indigo-300 border-b-0 p-2 text-xs rounded-t-lg bg-indigo-100 outline-none">
+                        <select id="h_worker2" class="w-full border border-indigo-300 p-2.5 rounded-b-lg bg-indigo-50"></select>
+                    </div>
+                    
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1">Machine Type *</label><select id="h_machine" class="w-full border p-2.5 rounded-lg bg-slate-50"></select></div>
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1">Select Design</label><select id="h_design" onchange="fillDesignStitches()" class="w-full border p-2.5 rounded-lg bg-indigo-50 border-indigo-300"></select></div>
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1">Total Stitches / Hours *</label><input type="number" id="h_qty" class="w-full border p-2.5 rounded-lg bg-slate-50"></div>
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1">Machine Frame</label><input type="number" id="h_frame" class="w-full border p-2.5 rounded-lg bg-slate-50"></div>
+                    
+                    <div class="machine-only-field"><label class="block text-sm font-semibold mb-1 text-emerald-600">Custom/Extra Bonus (₹)</label><input type="number" id="h_custom" value="0" class="w-full border p-2.5 rounded-lg bg-emerald-50"></div>
+                    
+                    <div class="md:col-span-3"><label class="block text-sm font-semibold mb-1 text-red-600">Remarks / Notes (Mandatory for Half/Absent)</label>
+                    <input type="text" id="h_note" placeholder="Enter reason for absence, half day, or other complaints..." class="w-full border border-red-200 p-2.5 rounded-lg bg-red-50"></div>
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" id="h_btn_save" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition">Save Entry</button>
+                    <button type="button" id="h_btn_cancel" onclick="cancelEditAttendance()" class="hidden w-1/3 bg-gray-400 hover:bg-gray-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition">Cancel</button>
+                </div>
+            </form>
+
+            <div id="w_history_section" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mt-6 hidden">
+                <h3 class="font-bold text-lg text-indigo-800 mb-3"><i class="fa-solid fa-list-check"></i> Is Mahine ki Haziri List</h3>
+                <div class="overflow-x-auto max-h-80 border rounded-lg border-slate-200">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead class="bg-slate-100 sticky top-0">
+                            <tr>
+                                <th class="p-3 border-b">Date</th>
+                                <th class="p-3 border-b">Status</th>
+                                <th class="p-3 border-b">Details (Machine/Stitch)</th>
+                                <th class="p-3 border-b text-red-600">Note</th>
+                                <th class="p-3 border-b text-right">Bonus Earned</th>
+                                <th class="p-3 border-b text-center">Edit / Del</th>
+                            </tr>
+                        </thead>
+                        <tbody id="w_history_body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. ADVANCE (UPAD) ENTRY & EDIT -->
+        <section id="advance" class="tab-content">
+            <h2 class="text-2xl font-bold mb-4 text-slate-800">Advance (Upad) Management</h2>
+            <form onsubmit="saveAdvance(event)" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-6" id="upad_form">
+                <input type="hidden" id="u_edit_id"> 
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div><label class="block text-sm font-semibold mb-1">Date *</label><input type="date" id="u_date" required class="w-full border p-2.5 rounded-lg bg-slate-50"></div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Worker *</label>
+                        <input type="text" id="search_uw" onkeyup="filterWorkerSelect(this.value, 'u_worker')" placeholder="🔍 Search..." class="w-full border border-b-0 p-1.5 text-xs rounded-t-lg bg-indigo-50 outline-none">
+                        <select id="u_worker" required class="w-full border p-2.5 rounded-b-lg bg-slate-50"></select>
+                    </div>
+                    <div><label class="block text-sm font-semibold mb-1 text-red-600">Amount (₹) *</label><input type="number" id="u_amount" required class="w-full border border-red-200 p-2.5 rounded-lg bg-red-50"></div>
+                    <div><label class="block text-sm font-semibold mb-1">Reason / Mode</label><input type="text" id="u_note" placeholder="Cash, Medical, etc." class="w-full border p-2.5 rounded-lg bg-slate-50"></div>
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" id="u_btn_save" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3.5 rounded-xl shadow-lg transition">Save Advance</button>
+                    <button type="button" id="u_btn_cancel" onclick="cancelEditAdvance()" class="hidden w-1/3 bg-gray-400 text-white font-bold py-3.5 rounded-xl shadow-lg transition">Cancel</button>
+                </div>
+            </form>
+            <h3 class="text-lg font-bold text-slate-700 mb-3">Advance Statement (<span id="upad_statement_month"></span>)</h3>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto max-h-64">
+                <table class="w-full text-left text-sm border-collapse">
+                    <thead class="bg-amber-50 sticky top-0">
+                        <tr>
+                            <th class="p-3">Date</th>
+                            <th class="p-3">Worker Name</th>
+                            <th class="p-3">Reason</th>
+                            <th class="p-3 text-right">Amount (₹)</th>
+                            <th class="p-3 text-center">Edit / Del</th>
+                        </tr>
+                    </thead>
+                    <tbody id="advanceStatementBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 4. REPORTS -->
+        <section id="reports" class="tab-content">
+            <h2 class="text-2xl font-bold mb-4 text-slate-800">Month-Wise Reports & Analysis</h2>
+            <div class="flex space-x-2 mb-4 overflow-x-auto pb-2">
+                <button onclick="setReportType('company')" id="btn_rep_company" class="bg-indigo-600 text-white px-4 py-2 rounded font-bold flex-shrink-0"><i class="fa-solid fa-chart-pie"></i> Company Analysis</button>
+                <button onclick="setReportType('worker')" id="btn_rep_worker" class="bg-white border text-slate-700 px-4 py-2 rounded font-semibold flex-shrink-0">Worker-Wise History</button>
+            </div>
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200" id="reportRenderArea"></div>
+        </section>
+
+        <!-- 5. MASTER SETTINGS -->
+        <section id="master" class="tab-content">
+            <h2 class="text-2xl font-bold mb-6 text-slate-800">Master Data & Settings</h2>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button onclick="openMaster('m_admin')" class="bg-gray-800 text-white font-bold px-4 py-3 rounded-lg shadow-sm"><i class="fa-solid fa-lock"></i> Security</button>
+                <button onclick="openMaster('m_cat')" class="bg-sky-100 text-sky-800 font-bold px-4 py-3 rounded-lg shadow-sm"><i class="fa-solid fa-tags"></i> Categories / Rules</button>
+                <button onclick="openMaster('m_worker')" class="bg-indigo-100 text-indigo-800 font-bold px-4 py-3 rounded-lg shadow-sm"><i class="fa-solid fa-users"></i> Workers</button>
+                <button onclick="openMaster('m_design')" class="bg-emerald-100 text-emerald-800 font-bold px-4 py-3 rounded-lg shadow-sm"><i class="fa-solid fa-pen-nib"></i> Layered Designs</button>
+                <button onclick="openMaster('m_rule')" class="bg-amber-100 text-amber-800 font-bold px-4 py-3 rounded-lg shadow-sm"><i class="fa-solid fa-gears"></i> Machine Rules</button>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                <div id="m_admin" class="master-panel block">
+                    <h3 class="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Admin Security (Password for Editing / Deleting)</h3>
+                    <form onsubmit="saveAdminPassword(event)" class="flex gap-2 mb-4 max-w-sm">
+                        <input type="password" id="admin_pass" placeholder="Enter New Password" required class="w-full border p-2 rounded bg-slate-50">
+                        <button type="submit" class="bg-gray-800 text-white px-4 py-2 rounded font-bold">Set Password</button>
+                    </form>
+                    <p class="text-xs text-gray-500">Default password is: <b>1234</b>. Iske bina koi entry edit ya delete nahi kar payega.</p>
+                </div>
+                
+                <div id="m_cat" class="master-panel">
+                    <h3 class="font-bold text-lg mb-4 text-sky-700 border-b pb-2" id="c_form_title">Manage Worker Categories</h3>
+                    <form id="c_form" onsubmit="saveWorkerType(event)" class="flex flex-col md:flex-row gap-2 mb-4">
+                        <input type="hidden" id="c_edit_id">
+                        <input type="text" id="c_name" placeholder="Category Name (e.g. Designer)" required class="w-full md:w-1/2 border p-2 rounded bg-slate-50">
+                        <select id="c_hasProd" class="w-full md:w-1/3 border p-2 rounded bg-slate-50 font-bold text-indigo-700">
+                            <option value="true">Needs Machine/Stitch Entry</option>
+                            <option value="false">Only Full/Half/Absent (Fixed)</option>
+                        </select>
+                        <button type="submit" id="c_btn_save" class="bg-sky-600 text-white px-4 py-2 rounded font-bold">Save</button>
+                        <button type="button" id="c_btn_cancel" onclick="cancelEditCategory()" class="hidden bg-gray-400 text-white px-4 py-2 rounded font-bold">Cancel</button>
+                    </form>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="font-bold text-gray-700 mb-2">Saved Categories List:</h4>
+                        <div class="max-h-64 overflow-y-auto border rounded bg-slate-50 text-sm divide-y" id="categoryList"></div>
+                    </div>
+                </div>
+                
+                <div id="m_worker" class="master-panel">
+                    <h3 class="font-bold text-lg mb-4 text-indigo-700 border-b pb-2" id="w_form_title">Add / Update Worker</h3>
+                    <form id="w_form" onsubmit="saveWorker(event)" class="space-y-3 mb-4">
+                        <input type="hidden" id="w_edit_id">
+                        <input type="text" id="w_name" placeholder="Worker Name" required class="w-full border p-2 rounded bg-slate-50">
+                        <select id="w_type" class="w-full border p-2 rounded bg-slate-50"></select>
+                        <input type="number" id="w_salary" placeholder="Fixed Salary (₹)" required class="w-full border p-2 rounded bg-slate-50">
+                        <select id="w_rule" class="w-full border p-2 rounded bg-slate-50 font-semibold text-indigo-800">
+                            <option value="30Days">Rule: 30/31 Days (No Leaves Allowed)</option>
+                            <option value="SundayOff">Rule: Sundays Off (No Salary Cut)</option>
+                            <option value="2Leaves">Rule: 2 Leaves Allowed (No Salary Cut)</option>
+                        </select>
+                        <div class="flex gap-2">
+                            <button type="submit" class="bg-indigo-600 text-white w-full py-2 rounded font-bold" id="w_btn_save">Save Worker</button>
+                            <button type="button" onclick="cancelEditWorker()" class="hidden bg-gray-400 text-white px-4 rounded font-bold" id="w_btn_cancel">Cancel</button>
+                        </div>
+                    </form>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="font-bold text-gray-700 mb-2">Saved Workers List:</h4>
+                        <div class="max-h-64 overflow-y-auto border rounded bg-slate-50 text-sm divide-y" id="workerList"></div>
+                    </div>
+                </div>
+
+                <div id="m_design" class="master-panel">
+                    <h3 class="font-bold text-lg mb-4 text-emerald-700 border-b pb-2" id="d_form_title">Add / Update Design</h3>
+                    <form id="d_form" onsubmit="saveDesign(event)" class="space-y-4 mb-4">
+                        <input type="hidden" id="d_edit_id">
+                        <div class="grid grid-cols-2 gap-3"><input type="text" id="d_code" placeholder="Design No." required class="border p-2 rounded"><input type="number" id="d_stitch" placeholder="Base Stitches" required class="border p-2 rounded"><input type="number" id="d_fixBonus" placeholder="Fixed Basic Bonus (₹)" class="col-span-2 border p-2 rounded"></div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="border p-3 rounded bg-blue-50"><h4 class="font-bold text-blue-800 text-sm mb-2 border-b border-blue-200">Stitch Bonus Layers</h4><div class="flex gap-2 mb-2"><input type="number" id="s_lim1" placeholder="T1 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="s_bon1" placeholder="T1 Bonus ₹" class="w-1/2 p-1.5 rounded border-blue-300"></div><div class="flex gap-2 mb-2"><input type="number" id="s_lim2" placeholder="T2 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="s_bon2" placeholder="T2 Bonus ₹" class="w-1/2 p-1.5 rounded border-blue-300"></div><div class="flex gap-2"><input type="number" id="s_lim3" placeholder="T3 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="s_bon3" placeholder="T3 Bonus ₹" class="w-1/2 p-1.5 rounded border-blue-300"></div></div>
+                            <div class="border p-3 rounded bg-amber-50"><h4 class="font-bold text-amber-800 text-sm mb-2 border-b border-amber-200">Frame Bonus Layers</h4><div class="flex gap-2 mb-2"><input type="number" id="f_lim1" placeholder="T1 Frame" class="w-1/2 p-1.5 rounded"><input type="number" id="f_bon1" placeholder="T1 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div><div class="flex gap-2 mb-2"><input type="number" id="f_lim2" placeholder="T2 Frame" class="w-1/2 p-1.5 rounded"><input type="number" id="f_bon2" placeholder="T2 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div><div class="flex gap-2"><input type="number" id="f_lim3" placeholder="T3 Frame" class="w-1/2 p-1.5 rounded"><input type="number" id="f_bon3" placeholder="T3 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div></div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="submit" id="d_btn_save" class="bg-emerald-600 text-white w-full py-2 rounded font-bold">Save Design Rules</button>
+                            <button type="button" id="d_btn_cancel" onclick="cancelEditDesign()" class="hidden bg-gray-400 text-white px-4 rounded font-bold">Cancel</button>
+                        </div>
+                    </form>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="font-bold text-gray-700 mb-2">Saved Designs List:</h4>
+                        <div class="max-h-64 overflow-y-auto border rounded bg-slate-50 text-sm divide-y" id="designList"></div>
+                    </div>
+                </div>
+
+                <div id="m_rule" class="master-panel">
+                    <h3 class="font-bold text-lg mb-4 text-amber-700 border-b pb-2" id="m_form_title">Machine Rates & Layer Bonus</h3>
+                    <form id="m_form" onsubmit="saveMachineRule(event)" class="space-y-4 mb-4">
+                        <input type="hidden" id="m_edit_id">
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="text" id="m_name" placeholder="Machine Name" required class="col-span-2 w-full border p-2 rounded">
+                            <input type="number" id="m_fixSal" placeholder="Fix Pagar/Month (If Extra M/C)" class="col-span-2 w-full border p-2 rounded bg-amber-50">
+                            <input type="number" id="m_min" placeholder="Min Target Stitches" required class="w-full border p-2 rounded">
+                            <input type="number" step="0.01" id="m_rate" placeholder="Rate / 1000" required class="w-full border p-2 rounded">
+                        </div>
+                        <div class="border p-3 rounded bg-amber-50">
+                            <h4 class="font-bold text-amber-800 text-sm mb-2 border-b border-amber-200">Machine Stitch Layers</h4>
+                            <div class="flex gap-2 mb-2"><input type="number" id="m_lim1" placeholder="T1 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="m_bon1" placeholder="T1 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div>
+                            <div class="flex gap-2 mb-2"><input type="number" id="m_lim2" placeholder="T2 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="m_bon2" placeholder="T2 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div>
+                            <div class="flex gap-2"><input type="number" id="m_lim3" placeholder="T3 Limit" class="w-1/2 p-1.5 rounded"><input type="number" id="m_bon3" placeholder="T3 Bonus ₹" class="w-1/2 p-1.5 rounded border-amber-300"></div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="submit" id="m_btn_save" class="bg-amber-600 text-white w-full py-2 rounded font-bold">Save Machine Rule</button>
+                            <button type="button" id="m_btn_cancel" onclick="cancelEditMachineRule()" class="hidden bg-gray-400 text-white px-4 rounded font-bold">Cancel</button>
+                        </div>
+                    </form>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="font-bold text-gray-700 mb-2">Saved Machine Rules List:</h4>
+                        <div class="max-h-64 overflow-y-auto border rounded bg-slate-50 text-sm divide-y" id="machineRuleList"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modals -->
+    <div id="upadModal" class="modal fixed inset-0 bg-black bg-opacity-50 z-[120] items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-red-600 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modalWorkerName">Advance History</h3>
+                <button onclick="document.getElementById('upadModal').classList.remove('active')" class="font-bold text-xl">&times;</button>
+            </div>
+            <div class="p-4 max-h-80 overflow-y-auto">
+                <table class="w-full text-sm text-left"><thead class="bg-gray-100"><tr><th class="p-2">Date</th><th class="p-2">Reason</th><th class="p-2 text-right">Amount</th></tr></thead><tbody id="modalUpadBody"></tbody></table>
+            </div>
+            <div class="p-4 bg-gray-50 border-t font-bold text-right text-red-600 text-lg">Total: ₹<span id="modalUpadTotal"></span></div>
+        </div>
+    </div>
+
+    <div id="analysisModal" class="modal fixed inset-0 bg-black bg-opacity-50 z-[120] items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-600 text-white p-4 flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-lg" id="analysisModalTitle">Detailed Report</h3>
+                <button onclick="document.getElementById('analysisModal').classList.remove('active')" class="font-bold text-2xl hover:text-red-300">&times;</button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 bg-slate-50">
+                <table class="w-full text-sm text-left border bg-white shadow-sm"><thead class="bg-gray-100 sticky top-0" id="analysisModalHead"></thead><tbody id="analysisModalBody"></tbody></table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden A4 PDF Box -->
+    <div id="payslip-container" class="payslip-box">
+        <div style="text-align:center; margin-bottom: 20px;">
+            <h1 style="font-size: 28px; font-weight: bold; margin:0; color: #312e81;">Mahi and Devans Co.</h1>
+            <p style="font-size: 16px; margin: 5px 0;">Salary & Performance Statement | Month: <span id="slip_month" style="font-weight:bold;"></span></p>
+        </div>
+        <div style="display:flex; justify-content: space-between; border: 2px solid black; padding: 10px; margin-bottom: 20px; background-color: #f3f4f6;">
+            <div><p style="margin:2px 0;"><strong>Name:</strong> <span id="slip_name"></span></p><p style="margin:2px 0;"><strong>Category:</strong> <span id="slip_rule"></span></p></div>
+            <div style="text-align:right;"><p style="margin:2px 0;"><strong>Fixed Salary:</strong> ₹<span id="slip_salary"></span></p><p style="margin:2px 0;"><strong>Effective Days:</strong> <span id="slip_days"></span></p></div>
+        </div>
+        <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">Daily Production & Salary Log</h3>
+        <table>
+            <thead style="background-color: #e5e7eb;">
+                <tr><th>Date</th><th>Machine/Design (Status)</th><th>Stitches/Frame</th><th>Base Sal/Day (₹)</th><th>Bonus (₹)</th><th>Remarks</th></tr>
+            </thead>
+            <tbody id="slip_daily_logs"></tbody>
+        </table>
+        <table>
+            <tr><td style="font-weight:bold;">Total Base Salary Earned</td><td style="text-align:right;" id="slip_base">0</td></tr>
+            <tr><td style="font-weight:bold; color: green;">Total Bonus (Machine + Tiered)</td><td style="text-align:right; font-weight:bold; color: green;" id="slip_bonus">0</td></tr>
+            <tr><td style="font-weight:bold; color: #4f46e5;">Pichla Baki (Previous Month Due/Advance)</td><td style="text-align:right; font-weight:bold;" id="slip_prev">0</td></tr>
+            <tr><td style="font-weight:bold; color: red;">Total Advance (Upad) Deducted</td><td style="text-align:right; font-weight:bold; color: red;" id="slip_upad">0</td></tr>
+            <tr style="background-color: #fef08a;"><th style="text-align:left; font-size: 18px;">Net Salary Payable</th><th style="text-align:right; font-size: 20px;" id="slip_net">0</th></tr>
+        </table>
+        <div style="display:flex; justify-content: space-between; margin-top: 50px;">
+            <p style="font-weight:bold; border-top: 1px solid black; padding-top: 5px;">Manager Signature</p>
+            <p style="font-weight:bold; border-top: 1px solid black; padding-top: 5px;">Worker Signature</p>
+        </div>
+    </div>
+
+    <!-- Mobile Nav -->
+    <nav class="md:hidden fixed bottom-0 w-full bg-white border-t flex justify-around text-xs font-medium z-[100] pb-2 pt-2 shadow">
+        <button onclick="switchTab('dashboard')" class="flex flex-col items-center p-2 text-indigo-700"><i class="fa-solid fa-chart-pie mb-1"></i> Dash</button>
+        <button onclick="switchTab('attendance')" class="flex flex-col items-center p-2 text-slate-500"><i class="fa-solid fa-calendar-check mb-1"></i> Haziri</button>
+        <button onclick="switchTab('advance')" class="flex flex-col items-center p-2 text-slate-500"><i class="fa-solid fa-wallet mb-1"></i> Advance</button>
+        <button onclick="switchTab('reports')" class="flex flex-col items-center p-2 text-slate-500"><i class="fa-solid fa-file-pdf mb-1"></i> Reports</button>
+        <button onclick="switchTab('master')" class="flex flex-col items-center p-2 text-slate-500"><i class="fa-solid fa-gear mb-1"></i> Master</button>
+    </nav>
+    <div id="toast" class="fixed top-24 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-xl opacity-0 z-[110] font-medium"><span id="toastMsg">Saved!</span></div>
+
+    <script>
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-Z5kgHCgxH37DyvPk8Ljc24-9eYZDF6EC0Pr9R431gAUlLJSW0-p0jRX9OWFr4kFQuQ/exec'; 
+        let adminPassword = localStorage.getItem('karkhana_adminPass') || '1234';
+        
+        let workerTypes = []; let workers = []; let designs = []; let machineRules = [];
+        let attendance = []; let advanceData = [];
+        let bonusChart; let compareChart; let currentReportType = 'company';
+
+        // SAFE DATA LOADER
+        function getSafeData(key, defaultVal) {
+            try { let data = JSON.parse(localStorage.getItem(key)); if (Array.isArray(data)) return data.filter(item => item !== null && item !== undefined); return data || defaultVal; } catch(e) { return defaultVal; }
+        }
+
+        function loadDataSafely() {
+            let rawTypes = getSafeData('karkhana_workerTypes', []);
+            if(rawTypes.length > 0 && typeof rawTypes[0] === 'string') {
+                workerTypes = rawTypes.map(t => ({ id: "C_"+Math.random().toString(36).substr(2,9), name: t, hasProduction: (t === 'Machine Worker' || t === 'Alter') }));
+                localStorage.setItem('karkhana_workerTypes', JSON.stringify(workerTypes));
+            } else if (rawTypes.length > 0 && typeof rawTypes[0] === 'object') {
+                workerTypes = rawTypes;
+            } else {
+                workerTypes = [ {id: "C_1", name: 'Machine Worker', hasProduction: true}, {id: "C_2", name: 'Alter', hasProduction: true}, {id: "C_3", name: 'Mending', hasProduction: false}, {id: "C_4", name: 'Designer', hasProduction: false} ];
+                localStorage.setItem('karkhana_workerTypes', JSON.stringify(workerTypes));
+            }
+
+            workers = getSafeData('karkhana_workers', [{ id: "W1", name: "Ramesh Bhai", type: "Machine Worker", fixSalary: 18000, rule: "30Days" }]);
+            designs = getSafeData('karkhana_designs', []);
+            machineRules = getSafeData('karkhana_machineRules', [{id: 'MR1', name: 'Type 25', min: 185000, rate: 1.75}]);
+            attendance = getSafeData('karkhana_att', []);
+            advanceData = getSafeData('karkhana_upad', []);
+
+            let changed = false;
+            advanceData.forEach(u => { if(u && !u.id) { u.id = "U_OLD_" + Math.random().toString(36).substr(2, 9); changed = true; } });
+            attendance.forEach(a => { if(a && !a.id) { a.id = "A_OLD_" + Math.random().toString(36).substr(2, 9); changed = true; } });
+            designs.forEach(d => { if(d && !d.id) { d.id = "D_OLD_" + Math.random().toString(36).substr(2, 9); changed = true; } });
+            machineRules.forEach(m => { if(m && !m.id) { m.id = "MR_OLD_" + Math.random().toString(36).substr(2, 9); changed = true; } });
+            if(changed) { 
+                localStorage.setItem('karkhana_upad', JSON.stringify(advanceData)); localStorage.setItem('karkhana_att', JSON.stringify(attendance)); 
+                localStorage.setItem('karkhana_designs', JSON.stringify(designs)); localStorage.setItem('karkhana_machineRules', JSON.stringify(machineRules)); 
+            }
+        }
+
+        function initApp() {
+            loadDataSafely();
+            let today = new Date(); document.getElementById('h_date').valueAsDate = today; document.getElementById('u_date').valueAsDate = today;
+            let mStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+            document.getElementById('app_month').value = mStr; if(document.getElementById('app_month_mob')) document.getElementById('app_month_mob').value = mStr;
+            refreshDropdowns(); renderMasterLists(); refreshAllData(); showWorkerSummary();
+        }
+
+        function saveAdminPassword(e) { e.preventDefault(); adminPassword = document.getElementById('admin_pass').value; localStorage.setItem('karkhana_adminPass', adminPassword); showToast("Password Updated!"); document.getElementById('admin_pass').value=''; }
+        function getSelMonth() { return document.getElementById('app_month').value; }
+        function getMonthName(ymStr) { if(!ymStr) return ""; let d = new Date(ymStr + "-01"); return d.toLocaleString('en-IN', { month: 'long', year: 'numeric' }); }
+        function getDaysInMonth(ymStr) { if(!ymStr) return 30; let p = ymStr.split('-'); return new Date(p[0], p[1], 0).getDate(); }
+        function checkAdmin() { let p = prompt("Enter Admin Password:"); if(p !== adminPassword) { alert("Wrong Password!"); return false; } return true; }
+
+        function refreshAllData() {
+            let selM = getSelMonth(); document.getElementById('dash_month_label').innerText = getMonthName(selM); document.getElementById('upad_statement_month').innerText = getMonthName(selM);
+            renderDashboard(); updateChart(); updateCompareChart(); renderAdvanceStatement();
+            if(document.getElementById('reports').classList.contains('active')) setReportType(currentReportType);
+            showWorkerSummary();
+        }
+
+        function filterWorkerSelect(query, selectId) {
+            let q = query.toLowerCase(); let html = workers.filter(w => (w.name||'').toLowerCase().includes(q)).map(w => `<option value="${w.id}">${w.name} (${w.type})</option>`).join(''); document.getElementById(selectId).innerHTML = html || '<option value="">No match</option>';
+            if(selectId === 'h_worker1') showWorkerSummary();
+        }
+
+        function refreshDropdowns() {
+            try {
+                let wHtml = workers.map(w => w ? `<option value="${w.id}">${w.name || 'Unnamed'} (${w.type || 'N/A'})</option>` : '').join('');
+                ['h_worker1', 'h_worker2', 'u_worker'].forEach(id => { try { document.getElementById(id).innerHTML = wHtml; } catch(e){} });
+                
+                try { document.getElementById('chartWorkerSelect').innerHTML = `<option value="ALL">All Workers</option>` + workers.map(w => w ? `<option value="${w.id}">${w.name || 'Unnamed'}</option>` : '').join(''); } catch(e){}
+                try { document.getElementById('h_design').innerHTML = `<option value="">Manual Entry</option>` + designs.map(d => d ? `<option value="${d.code}">${d.code || 'N/A'} (${d.stitches || 0} St)</option>` : '').join(''); } catch(e){}
+                try { document.getElementById('h_machine').innerHTML = machineRules.map(m => m ? `<option value="${m.name}">${m.name || 'N/A'} (Rate: ${m.rate || 0})</option>` : '').join('') + `<option value="ALTER">ALTER (Hourly)</option>`; } catch(e){}
+                
+                try { 
+                    let tHtml = workerTypes.map(t => {
+                        if(!t) return ''; let n = typeof t === 'string' ? t : (t.name || 'Unnamed'); return `<option value="${n}">${n}</option>`;
+                    }).join('');
+                    document.getElementById('w_type').innerHTML = tHtml; 
+                } catch(e){}
+            } catch(e) { console.error("Dropdown Error:", e); }
+        }
+
+        function toggleWorker2() {
+            let modeEl = document.getElementById('h_mode');
+            let w2Div = document.getElementById('worker2_div');
+            if(modeEl && w2Div) w2Div.classList.toggle('hidden', modeEl.value !== 'Shared50');
+        }
+
+        function fillDesignStitches() {
+            let c = document.getElementById('h_design').value;
+            let d = designs.find(x => x && x.code === c);
+            if(d) document.getElementById('h_qty').value = d.stitches;
+        }
+
+        function toggleMachineFields() {
+            let wId = document.getElementById('h_worker1').value; let w = workers.find(x => x && x.id === wId); let isMachineWorker = false;
+            if(w) { let cat = workerTypes.find(t => t && t.name === w.type); isMachineWorker = cat ? cat.hasProduction : false; }
+            document.querySelectorAll('.machine-only-field').forEach(el => { el.style.display = isMachineWorker ? 'block' : 'none'; });
+            if(isMachineWorker) toggleWorker2();
+            return isMachineWorker;
+        }
+
+        function showWorkerSummary() {
+            let wId = document.getElementById('h_worker1').value; let isMachineWorker = toggleMachineFields();
+            let sumDiv = document.getElementById('w1_summary'); let histSection = document.getElementById('w_history_section'); let histBody = document.getElementById('w_history_body');
+            if(!wId) { sumDiv.innerHTML = ''; histSection.classList.add('hidden'); return; }
+            let selM = getSelMonth(); let wAtt = attendance.filter(a => a && a.workerId === wId && a.date && a.date.startsWith(selM)).sort((a,b) => new Date(a.date) - new Date(b.date));
+            if(wAtt.length === 0) { sumDiv.innerHTML = '📝 Is mahine koi Haziri nahi.'; histSection.classList.add('hidden'); return; }
+            histSection.classList.remove('hidden'); let days = calcEffDays(wAtt);
+            sumDiv.innerHTML = `✅ Total Attendance: ${days} Days | Last Attendance: ${wAtt[wAtt.length - 1].date}`;
+            histBody.innerHTML = wAtt.map(a => {
+                let det = (!isMachineWorker || a.machine === 'NONE') ? 'Fixed Salary Worker' : `${a.machine}/${a.design} (${a.qty||0} st)`;
+                return `<tr class="border-b hover:bg-slate-50">
+                    <td class="p-3">${a.date}</td>
+                    <td class="p-3 font-bold">${a.status}</td>
+                    <td class="p-3 text-xs text-gray-600">${det}</td>
+                    <td class="p-3 text-red-500 text-xs">${a.note!=='-'?a.note:''}</td>
+                    <td class="p-3 text-right font-bold text-emerald-600">₹${(a.finalBonus||0).toFixed(0)}</td>
+                    <td class="p-3 text-center whitespace-nowrap">
+                        <button type="button" onclick="triggerEditAttendance('${a.id}')" class="text-indigo-600 hover:text-indigo-800 mr-3" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="deleteAttendance('${a.id}')" class="text-red-500 hover:text-red-700" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active')); document.getElementById(tabId).classList.add('active');
+            if(window.innerWidth < 768 && typeof event !== 'undefined' && event.currentTarget) { document.querySelectorAll('nav.md\\:hidden button').forEach(b => { b.classList.remove('text-indigo-700'); b.classList.add('text-slate-500'); }); event.currentTarget.classList.add('text-indigo-700'); }
+            if(tabId === 'dashboard') { renderDashboard(); updateChart(); updateCompareChart(); }
+            if(tabId === 'advance') { renderAdvanceStatement(); }
+            if(tabId === 'reports') { setReportType(currentReportType); }
+            if(tabId === 'attendance') { showWorkerSummary(); }
+        }
+        function openMaster(panelId) { document.querySelectorAll('.master-panel').forEach(p => p.style.display = 'none'); document.getElementById(panelId).style.display = 'block'; }
+
+        // ====== MASTER CRUD ======
+        function saveWorkerType(e) { 
+            e.preventDefault(); let id = document.getElementById('c_edit_id').value; let n = document.getElementById('c_name').value.trim(); let h = document.getElementById('c_hasProd').value === 'true';
+            if(n) {
+                if(id) { workerTypes = workerTypes.map(t => t.id === id ? {id, name: n, hasProduction: h} : t); showToast("Category Updated!"); }
+                else { workerTypes.push({ id: "C_"+Date.now(), name: n, hasProduction: h }); showToast("Category Added!"); }
+                localStorage.setItem('karkhana_workerTypes', JSON.stringify(workerTypes)); cancelEditCategory(); refreshDropdowns(); renderMasterLists();
+            }
+        }
+        function editWorkerType(id) { let t = workerTypes.find(x => x && x.id === id); if(!t || !checkAdmin()) return; document.getElementById('c_edit_id').value = t.id; document.getElementById('c_name').value = t.name; document.getElementById('c_hasProd').value = t.hasProduction ? 'true' : 'false'; document.getElementById('c_form_title').innerText = "Update Category"; document.getElementById('c_btn_save').innerText = "Update"; document.getElementById('c_btn_save').classList.replace('bg-sky-600', 'bg-emerald-600'); document.getElementById('c_btn_cancel').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function cancelEditCategory() { document.getElementById('c_edit_id').value = ''; document.getElementById('c_form').reset(); document.getElementById('c_form_title').innerText = "Manage Worker Categories"; document.getElementById('c_btn_save').innerText = "Save"; document.getElementById('c_btn_save').classList.replace('bg-emerald-600', 'bg-sky-600'); document.getElementById('c_btn_cancel').classList.add('hidden'); }
+        function deleteWorkerType(id) { if(!checkAdmin() || !confirm("Delete Category?")) return; workerTypes = workerTypes.filter(t => t.id !== id); localStorage.setItem('karkhana_workerTypes', JSON.stringify(workerTypes)); refreshDropdowns(); renderMasterLists(); }
+        
+        function saveWorker(e) { e.preventDefault(); let id = document.getElementById('w_edit_id').value; let payload = { id: id ? id : "W_" + Date.now(), name: document.getElementById('w_name').value, type: document.getElementById('w_type').value, fixSalary: parseFloat(document.getElementById('w_salary').value), rule: document.getElementById('w_rule').value }; if(id) { workers = workers.map(w => w.id === id ? payload : w); showToast("Worker Updated!"); } else { workers.push(payload); showToast("Worker Added!"); } localStorage.setItem('karkhana_workers', JSON.stringify(workers)); cancelEditWorker(); refreshDropdowns(); renderMasterLists(); refreshAllData(); }
+        function editWorker(id) { 
+            let w = workers.find(x => x && x.id === id); if(!w || !checkAdmin()) return; 
+            document.getElementById('w_edit_id').value = w.id; document.getElementById('w_name').value = w.name; 
+            let sel = document.getElementById('w_type'); let exists = Array.from(sel.options).some(o => o.value === w.type); if(!exists && w.type) { let opt = document.createElement('option'); opt.value = w.type; opt.text = w.type + " (Deleted)"; sel.appendChild(opt); } sel.value = w.type; 
+            document.getElementById('w_salary').value = w.fixSalary; document.getElementById('w_rule').value = w.rule; document.getElementById('w_form_title').innerText = "Update Worker"; document.getElementById('w_btn_save').innerText = "Update Worker"; document.getElementById('w_btn_save').classList.replace('bg-indigo-600', 'bg-emerald-600'); document.getElementById('w_btn_cancel').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); 
+        }
+        function cancelEditWorker() { document.getElementById('w_edit_id').value = ''; document.getElementById('w_form').reset(); document.getElementById('w_form_title').innerText = "Add / Update Worker"; document.getElementById('w_btn_save').innerText = "Save Worker"; document.getElementById('w_btn_save').classList.replace('bg-emerald-600', 'bg-indigo-600'); document.getElementById('w_btn_cancel').classList.add('hidden'); refreshDropdowns(); }
+        function deleteWorker(id) { if(!checkAdmin() || !confirm("Delete Worker?")) return; workers = workers.filter(w => w.id !== id); localStorage.setItem('karkhana_workers', JSON.stringify(workers)); refreshDropdowns(); renderMasterLists(); refreshAllData(); }
+        
+        function saveDesign(e) { 
+            e.preventDefault(); let id = document.getElementById('d_edit_id').value; let g = (id) => parseFloat(document.getElementById(id).value) || 0; 
+            let payload = { id: id ? id : "D_"+Date.now(), code: document.getElementById('d_code').value, stitches: g('d_stitch'), fixBonus: g('d_fixBonus'), sLim1: g('s_lim1'), sBon1: g('s_bon1'), sLim2: g('s_lim2'), sBon2: g('s_bon2'), sLim3: g('s_lim3'), sBon3: g('s_bon3'), fLim1: g('f_lim1'), fBon1: g('f_bon1'), fLim2: g('f_lim2'), fBon2: g('f_bon2'), fLim3: g('f_lim3'), fBon3: g('f_bon3') };
+            if(id) { designs = designs.map(d => d.id === id ? payload : d); showToast("Design Updated!"); } else { designs.push(payload); showToast("Design Added!"); }
+            localStorage.setItem('karkhana_designs', JSON.stringify(designs)); cancelEditDesign(); refreshDropdowns(); renderMasterLists(); 
+        }
+        function editDesign(id) { let d = designs.find(x => x && x.id === id); if(!d || !checkAdmin()) return; document.getElementById('d_edit_id').value = d.id; ['d_code','d_stitch','d_fixBonus','s_lim1','s_bon1','s_lim2','s_bon2','s_lim3','s_bon3','f_lim1','f_bon1','f_lim2','f_bon2','f_lim3','f_bon3'].forEach(k => document.getElementById(k).value = d[k==='d_stitch'?'stitches':k] || ''); document.getElementById('d_form_title').innerText = "Update Design"; document.getElementById('d_btn_save').innerText = "Update Rules"; document.getElementById('d_btn_cancel').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function cancelEditDesign() { document.getElementById('d_edit_id').value = ''; document.getElementById('d_form').reset(); document.getElementById('d_form_title').innerText = "Add Design & Layered Bonus"; document.getElementById('d_btn_save').innerText = "Save Design Rules"; document.getElementById('d_btn_cancel').classList.add('hidden'); }
+        function deleteDesign(id) { if(!checkAdmin() || !confirm("Delete Design?")) return; designs = designs.filter(d => d.id !== id); localStorage.setItem('karkhana_designs', JSON.stringify(designs)); refreshDropdowns(); renderMasterLists(); }
+        
+        function saveMachineRule(e) { 
+            e.preventDefault(); let id = document.getElementById('m_edit_id').value; let g = (id) => parseFloat(document.getElementById(id).value) || 0; let n = document.getElementById('m_name').value.trim();
+            let payload = { id: id ? id : "MR_"+Date.now(), name: n, fixSal: g('m_fixSal'), min: g('m_min'), rate: g('m_rate'), mLim1: g('m_lim1'), mBon1: g('m_bon1'), mLim2: g('m_lim2'), mBon2: g('m_bon2'), mLim3: g('m_lim3'), mBon3: g('m_bon3') };
+            if(id) { machineRules = machineRules.map(m => m.id === id ? payload : m); showToast("Rule Updated!"); } else { machineRules.push(payload); showToast("Rule Saved!"); }
+            localStorage.setItem('karkhana_machineRules', JSON.stringify(machineRules)); cancelEditMachineRule(); refreshDropdowns(); renderMasterLists(); 
+        }
+        function editMachineRule(id) { let m = machineRules.find(x => x && x.id === id); if(!m || !checkAdmin()) return; document.getElementById('m_edit_id').value = m.id; ['m_name','m_fixSal','m_min','m_rate','m_lim1','m_bon1','m_lim2','m_bon2','m_lim3','m_bon3'].forEach(k => document.getElementById(k).value = m[k] || ''); document.getElementById('m_form_title').innerText = "Update Machine Rule"; document.getElementById('m_btn_save').innerText = "Update"; document.getElementById('m_btn_cancel').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function cancelEditMachineRule() { document.getElementById('m_edit_id').value = ''; document.getElementById('m_form').reset(); document.getElementById('m_form_title').innerText = "Machine Rates & Layer Bonus"; document.getElementById('m_btn_save').innerText = "Save Machine Rule"; document.getElementById('m_btn_cancel').classList.add('hidden'); }
+        function deleteRule(id) { if(!checkAdmin() || !confirm("Delete Machine Rule?")) return; machineRules = machineRules.filter(r => r.id !== id); localStorage.setItem('karkhana_machineRules', JSON.stringify(machineRules)); refreshDropdowns(); renderMasterLists(); }
+
+        function renderMasterLists() {
+            try {
+                let cList = document.getElementById('categoryList');
+                if(cList) cList.innerHTML = workerTypes.map(t => { if(!t) return ''; let id = t.id || t; let name = t.name || t; let hasP = t.hasProduction ? 'Needs Production Info' : 'Fixed/Status Only'; return `<div class="p-3 border-b flex justify-between items-center hover:bg-slate-50"><div><b>${name}</b> <br><span class="text-xs text-gray-500">(${hasP})</span></div><div><button type="button" onclick="editWorkerType('${id}')" class="text-blue-600 mr-4"><i class="fa-solid fa-pen"></i></button><button type="button" onclick="deleteWorkerType('${id}')" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div></div>`; }).join('');
+                
+                let wList = document.getElementById('workerList');
+                if(wList) wList.innerHTML = workers.map(w => { if(!w) return ''; let id = w.id; let name = w.name || 'Unknown'; let type = w.type || 'N/A'; let rule = w.rule || 'N/A'; let sal = w.fixSalary || 0; return `<div class="p-3 border-b flex justify-between items-center group hover:bg-indigo-50"><div class="relative cursor-pointer"><b>${name}</b> (${type}) <span class="text-xs text-indigo-500">[${rule}]</span><div class="absolute left-0 -top-6 bg-black text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 pointer-events-none">₹${sal}</div></div> <div><button type="button" onclick="editWorker('${id}')" class="text-blue-600 mr-4"><i class="fa-solid fa-pen"></i></button><button type="button" onclick="deleteWorker('${id}')" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div></div>`; }).join('');
+                
+                let dList = document.getElementById('designList');
+                if(dList) dList.innerHTML = designs.map(d => { if(!d) return ''; let id = d.id; let code = d.code || 'N/A'; let st = d.stitches || 0; let fixB = d.fixBonus || 0; return `<div class="p-3 border-b hover:bg-slate-50 flex justify-between items-center text-xs"><div><b class="text-sm">${code}</b> (${st} St, Fix Bonus: ₹${fixB})<br><span class="text-gray-500">Layers: S(${d.sLim1||0}, ${d.sLim2||0}, ${d.sLim3||0}), F(${d.fLim1||0}, ${d.fLim2||0}, ${d.fLim3||0})</span></div> <div><button type="button" onclick="editDesign('${id}')" class="text-blue-600 mr-4"><i class="fa-solid fa-pen"></i></button><button type="button" onclick="deleteDesign('${id}')" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div></div>`; }).join('');
+                
+                let mList = document.getElementById('machineRuleList');
+                if(mList) mList.innerHTML = machineRules.map(m => { if(!m) return ''; let id = m.id; let name = m.name || 'N/A'; let fSal = m.fixSal || 0; let min = m.min || 0; let rate = m.rate || 0; return `<div class="p-3 border-b hover:bg-slate-50 flex justify-between items-center"><div><b>${name}</b> (Fix Sal: ₹${fSal}, Min: ${min}, Rate: ${rate})<br><span class="text-xs text-gray-500">Layers: T1>${m.mLim1||0}(₹${m.mBon1||0}), T2>${m.mLim2||0}(₹${m.mBon2||0}), T3>${m.mLim3||0}(₹${m.mBon3||0})</span></div> <div><button type="button" onclick="editMachineRule('${id}')" class="text-blue-600 mr-4"><i class="fa-solid fa-pen"></i></button><button type="button" onclick="deleteRule('${id}')" class="text-red-500"><i class="fa-solid fa-trash"></i></button></div></div>`; }).join('');
+            } catch(e) { console.error("Error Rendering Lists", e); }
+        }
+
+        // ====== ATTENDANCE (CREATE, EDIT, DELETE) ======
+        function sendToGoogleSheet(sheetName, rowData) { if(SCRIPT_URL && SCRIPT_URL !== 'MERA_COPIED_URL_YAHAN_PASTE_KAREIN') { fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: sheetName, rowData: rowData }) }); } }
+
+        function saveAttendance(e) {
+            e.preventDefault();
+            let editId = document.getElementById('h_edit_id').value;
+            let status = document.getElementById('h_status').value, note = document.getElementById('h_note').value.trim();
+            if((status === 'Half' || status === 'Absent') && (!note || note === '-')) { alert("Please enter Remarks for Half Day or Absent!"); return; }
+            if(!note) note = "-";
+            
+            let date = document.getElementById('h_date').value; let customBonus = parseFloat(document.getElementById('h_custom').value) || 0;
+            let w1 = document.getElementById('h_worker1').value; let isMachineWorker = toggleMachineFields();
+            let mode = 'Normal', machine = 'NONE', designCode = '-', qty = 0, frame = 0; let autoBonus = 0, m_extraBonus = 0, d_extraBonus = 0;
+
+            if (isMachineWorker) {
+                mode = document.getElementById('h_mode').value; machine = document.getElementById('h_machine').value;
+                designCode = document.getElementById('h_design').value || "-"; qty = parseFloat(document.getElementById('h_qty').value) || 0; frame = parseFloat(document.getElementById('h_frame').value) || 0;
+                if (!qty && status !== 'Absent') { alert("Total Stitches / Hours likhna zaroori hai!"); return; }
+
+                if (status !== 'Absent') {
+                    let rule = machineRules.find(r => r.name === machine); 
+                    if (mode === 'ExtraPagar') {
+                        if(rule && (rule.fixSal || 0) > 0) { let div = getDaysInMonth(date.substring(0,7)); autoBonus = rule.fixSal / div; if(status === 'Half') autoBonus = autoBonus / 2; }
+                    } else {
+                        if(rule) {
+                            if(qty > rule.min) autoBonus = ((qty - rule.min) / 1000) * rule.rate; 
+                            if(rule.mLim1 > 0 && qty >= rule.mLim1) m_extraBonus += rule.mBon1; if(rule.mLim2 > 0 && qty >= rule.mLim2) m_extraBonus += rule.mBon2; if(rule.mLim3 > 0 && qty >= rule.mLim3) m_extraBonus += rule.mBon3;
+                        } else if(machine === 'ALTER') { autoBonus = qty * 120; }
+
+                        let d = designs.find(x => x && x.code === designCode);
+                        if(d) {
+                            if(d.fixBonus > 0) d_extraBonus += d.fixBonus;
+                            if(d.fLim1 > 0 && frame >= d.fLim1) d_extraBonus += d.fBon1; if(d.fLim2 > 0 && frame >= d.fLim2) d_extraBonus += d.fBon2; if(d.fLim3 > 0 && frame >= d.fLim3) d_extraBonus += d.fBon3;
+                            if(d.sLim1 > 0 && qty >= d.sLim1) d_extraBonus += d.sBon1; if(d.sLim2 > 0 && qty >= d.sLim2) d_extraBonus += d.sBon2; if(d.sLim3 > 0 && qty >= d.sLim3) d_extraBonus += d.sBon3;
+                        }
+                    }
+                }
+            }
+            
+            let finalBonus = autoBonus + m_extraBonus + d_extraBonus + customBonus; 
+            let baseEntry = { id: editId ? editId : "A_"+Date.now(), date, status, mode, machine, design: designCode, frame, qty, customBonus, note };
+
+            if(editId) {
+                attendance = attendance.filter(a => a.id !== editId); 
+                attendance.push({ ...baseEntry, workerId: w1, finalBonus: finalBonus }); showToast("Attendance Updated!");
+            } else {
+                if(mode === 'Shared50' && isMachineWorker) {
+                    let w2 = document.getElementById('h_worker2').value;
+                    attendance.push({ ...baseEntry, workerId: w1, finalBonus: finalBonus/2 }); attendance.push({ ...baseEntry, id: "A_"+Date.now()+1, workerId: w2, finalBonus: finalBonus/2 });
+                    sendToGoogleSheet("Haziri", [date, (workers.find(w=>w.id===w1)||{}).name || '', status, mode, machine, qty, designCode, frame, customBonus/2, finalBonus/2, note]);
+                    sendToGoogleSheet("Haziri", [date, (workers.find(w=>w.id===w2)||{}).name || '', status, mode, machine, qty, designCode, frame, customBonus/2, finalBonus/2, note]);
+                } else { 
+                    attendance.push({ ...baseEntry, workerId: w1, finalBonus: finalBonus }); 
+                    sendToGoogleSheet("Haziri", [date, (workers.find(w=>w.id===w1)||{}).name || '', status, mode, machine, qty, designCode, frame, customBonus, finalBonus, note]);
+                }
+                showToast("Saved!"); 
+            }
+            localStorage.setItem('karkhana_att', JSON.stringify(attendance));
+            cancelEditAttendance(w1);
+            refreshAllData(); showWorkerSummary();
+        }
+
+        function triggerEditAttendance(id) {
+            if(!checkAdmin()) return; let a = attendance.find(x => x && x.id === id); if(!a) return;
+            document.getElementById('h_edit_id').value = a.id; document.getElementById('h_date').value = a.date; document.getElementById('h_status').value = a.status || 'Full'; document.getElementById('h_worker1').value = a.workerId;
+            document.getElementById('h_mode').value = a.mode || 'Normal'; document.getElementById('h_machine').value = a.machine === 'NONE' ? '' : a.machine; document.getElementById('h_design').value = a.design === '-' ? '' : a.design;
+            document.getElementById('h_qty').value = a.qty || ''; document.getElementById('h_frame').value = a.frame || ''; document.getElementById('h_custom').value = a.customBonus || 0; document.getElementById('h_note').value = a.note === '-' ? '' : a.note;
+            document.getElementById('h_btn_save').innerText = "Update Entry"; document.getElementById('h_btn_save').classList.replace('bg-indigo-600', 'bg-emerald-600'); document.getElementById('h_btn_cancel').classList.remove('hidden');
+            toggleMachineFields(); toggleWorker2(); window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function deleteAttendance(id) {
+            if(!checkAdmin()) return;
+            if(!confirm("Kya aap is Haziri entry ko permanently delete karna chahte hain?")) return;
+            let keepWorker = document.getElementById('h_worker1').value;
+            attendance = attendance.filter(a => a && a.id !== id);
+            localStorage.setItem('karkhana_att', JSON.stringify(attendance));
+            if(document.getElementById('h_edit_id').value === id) cancelEditAttendance(keepWorker);
+            showToast("Attendance Deleted!");
+            refreshAllData();
+        }
+
+        function cancelEditAttendance(keepWorkerId) {
+            document.getElementById('h_edit_id').value = '';
+            document.getElementById('att_form').reset();
+            document.getElementById('h_date').valueAsDate = new Date();
+            if(keepWorkerId) document.getElementById('h_worker1').value = keepWorkerId;
+            document.getElementById('h_btn_save').innerText = "Save Entry";
+            document.getElementById('h_btn_save').classList.replace('bg-emerald-600', 'bg-indigo-600');
+            document.getElementById('h_btn_cancel').classList.add('hidden');
+            toggleMachineFields();
+        }
+
+        // ====== UPAD (ADVANCE - CREATE, EDIT, DELETE) ======
+        function saveAdvance(e) {
+            e.preventDefault(); let editId = document.getElementById('u_edit_id').value, date = document.getElementById('u_date').value, workerId = document.getElementById('u_worker').value, amount = parseFloat(document.getElementById('u_amount').value) || 0, note = document.getElementById('u_note').value || "-";
+            if(editId) { advanceData = advanceData.map(u => u.id === editId ? {id: editId, date, workerId, amount, note} : u); showToast("Advance Updated!"); } 
+            else { advanceData.push({ id: "U_"+Date.now(), date, workerId, amount, note }); showToast("Advance Saved!"); sendToGoogleSheet("Upad", [date, (workers.find(w=>w.id===workerId)||{}).name || '', amount, "-", note]);}
+            localStorage.setItem('karkhana_upad', JSON.stringify(advanceData)); cancelEditAdvance(); refreshAllData();
+        }
+
+        function triggerEditAdvance(id) {
+            if(!checkAdmin()) return; let u = advanceData.find(x => x && x.id === id); if(!u) { alert("Record not found!"); return; }
+            document.getElementById('u_edit_id').value = u.id; document.getElementById('u_date').value = u.date; document.getElementById('u_worker').value = u.workerId; document.getElementById('u_amount').value = u.amount; document.getElementById('u_note').value = u.note; document.getElementById('u_btn_save').innerText = "Update Advance"; document.getElementById('u_btn_cancel').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); 
+        }
+
+        function deleteAdvance(id) {
+            if(!checkAdmin()) return;
+            if(!confirm("Kya aap is Advance (Upad) entry ko permanently delete karna chahte hain?")) return;
+            advanceData = advanceData.filter(u => u && u.id !== id);
+            localStorage.setItem('karkhana_upad', JSON.stringify(advanceData));
+            if(document.getElementById('u_edit_id').value === id) cancelEditAdvance();
+            showToast("Advance Deleted!");
+            refreshAllData();
+        }
+
+        function cancelEditAdvance() {
+            document.getElementById('u_edit_id').value = '';
+            document.getElementById('upad_form').reset();
+            document.getElementById('u_date').valueAsDate = new Date();
+            document.getElementById('u_btn_save').innerText = "Save Advance";
+            document.getElementById('u_btn_cancel').classList.add('hidden');
+        }
+
+        function renderAdvanceStatement() {
+            let selM = getSelMonth(); let sortedAdv = advanceData.filter(u => u && u.date && u.date.startsWith(selM)).sort((a,b) => new Date(b.date) - new Date(a.date));
+            document.getElementById('advanceStatementBody').innerHTML = sortedAdv.length === 0 
+                ? `<tr><td colspan="5" class="p-4 text-center text-gray-400">Is mahine koi Advance entry nahi hai.</td></tr>`
+                : sortedAdv.map(u => `<tr class="border-b hover:bg-slate-50">
+                    <td class="p-3">${u.date}</td>
+                    <td class="p-3 font-semibold">${(workers.find(w=>w.id===u.workerId)||{}).name || 'Unknown'}</td>
+                    <td class="p-3 text-slate-600">${u.note}</td>
+                    <td class="p-3 text-right font-bold text-red-600">₹${u.amount}</td>
+                    <td class="p-3 text-center whitespace-nowrap">
+                        <button type="button" onclick="triggerEditAdvance('${u.id}')" class="text-indigo-600 hover:text-indigo-800 mr-3" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="deleteAdvance('${u.id}')" class="text-red-500 hover:text-red-700" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        // --- CALCULATION LOGIC ---
+        function calcEffDays(wAtt) { return wAtt.reduce((sum, a) => { let stat = a.status || 'Full'; let val = stat === 'Full' ? 1 : (stat === 'Half' ? 0.5 : 0); let mode = a.mode || 'Normal'; if(mode === 'Normal' || mode === 'Full') return sum + val; if(mode === 'Shared50') return sum + (val / 2); return sum; }, 0); }
+        function calculateEarnedSalary(worker, effDays, monthStr) {
+            let tDays = getDaysInMonth(monthStr), divisor = tDays;
+            if(worker.rule === 'SundayOff') { let sundays=0, [yyyy,mm]=monthStr.split('-'); for(let i=1;i<=tDays;i++){if(new Date(yyyy,mm-1,i).getDay()===0)sundays++;} divisor = tDays - sundays; } else if (worker.rule === '2Leaves') { divisor = tDays - 2; }
+            if(divisor <= 0) divisor = 1; return (worker.fixSalary / divisor) * effDays;
+        }
+        function calculatePreviousBalance(worker, currentMonthStr) {
+            let pastAtt = attendance.filter(a => a && a.workerId === worker.id && a.date && a.date.substring(0,7) < currentMonthStr);
+            let pastAdv = advanceData.filter(u => u && u.workerId === worker.id && u.date && u.date.substring(0,7) < currentMonthStr);
+            let allPastMonths = [...new Set([...pastAtt.map(a => a.date.substring(0,7)), ...pastAdv.map(u => u.date.substring(0,7))])];
+            let pastEarned = 0, pastBonus = 0;
+            allPastMonths.forEach(pm => { let mAtt = pastAtt.filter(a => a.date.startsWith(pm)); pastEarned += calculateEarnedSalary(worker, calcEffDays(mAtt), pm); pastBonus += mAtt.reduce((s, a) => s + (a.finalBonus || 0), 0); });
+            let pastUpad = pastAdv.reduce((s, u) => s + (u.amount || 0), 0);
+            return (pastEarned + pastBonus) - pastUpad;
+        }
+
+        // ====== DASHBOARD & CHARTS ======
+        function renderDashboard() {
+            let selM = getSelMonth(); let totPagarAll = 0; let posList = '', negList = '';
+            let workerStats = workers.map(w => {
+                let wAtt = attendance.filter(a => a && a.workerId === w.id && a.date && a.date.startsWith(selM)); let wAdv = advanceData.filter(u => u && u.workerId === w.id && u.date && u.date.startsWith(selM));
+                let effDays = calcEffDays(wAtt);
+                let earnedSalary = calculateEarnedSalary(w, effDays, selM), totalBonus = wAtt.reduce((sum, a) => sum + (a.finalBonus || 0), 0), totalUpad = wAdv.reduce((sum, u) => sum + (u.amount || 0), 0);
+                let pichlaBaki = calculatePreviousBalance(w, selM); let net = (earnedSalary + totalBonus) - totalUpad + pichlaBaki; totPagarAll += net > 0 ? net : 0; 
+                return { w, earnedSalary, totalBonus, totalUpad, pichlaBaki, net, isNegative: net < 0 };
+            });
+
+            document.getElementById('dash_total_pagar').innerText = '₹' + totPagarAll.toFixed(0);
+            workerStats.sort((a, b) => b.net - a.net).forEach(stat => {
+                let card = `<div class="bg-white p-3 rounded shadow-sm flex justify-between border-l-4 ${stat.isNegative ? 'border-red-500' : 'border-emerald-500'}"><span class="font-bold cursor-pointer" onclick="showUpadModal('${stat.w.id}')">${stat.w.name} <i class="fa-solid fa-circle-info text-gray-400 text-xs"></i></span><span class="font-bold ${stat.isNegative ? 'text-red-600' : 'text-emerald-700'}">₹${stat.net.toFixed(0)}</span></div>`;
+                if(stat.isNegative) negList += card; else posList += card;
+            });
+            document.getElementById('dashListPositive').innerHTML = posList || '<p class="text-sm text-gray-500">No data</p>'; document.getElementById('dashListNegative').innerHTML = negList || '<p class="text-sm text-gray-500">Sabka balance positive hai.</p>';
+        }
+
+        function updateChart() {
+            if(!document.getElementById('bonusChart')) return;
+            let ctx = document.getElementById('bonusChart').getContext('2d');
+            let selEl = document.getElementById('chartWorkerSelect');
+            let selectedW = selEl ? selEl.value : 'ALL';
+            let selM = getSelMonth(), labels = [], dataPoints = [];
+            if(selectedW === 'ALL') {
+                workers.forEach(w => { let tb = attendance.filter(a => a && a.workerId === w.id && a.date && a.date.startsWith(selM)).reduce((sum, a) => sum + (a.finalBonus || 0), 0); labels.push(w.name); dataPoints.push(tb); });
+            } else {
+                let wAtt = attendance.filter(a => a && a.workerId === selectedW && a.date && a.date.startsWith(selM)).sort((a,b) => new Date(a.date) - new Date(b.date));
+                wAtt.forEach(a => { labels.push(a.date.slice(5)); dataPoints.push(a.finalBonus || 0); });
+            }
+            if(bonusChart) bonusChart.destroy();
+            bonusChart = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Bonus (₹)', data: dataPoints, backgroundColor: '#4f46e5' }] }, options: { responsive: true, maintainAspectRatio: false } });
+        }
+
+        function updateCompareChart() {
+            let ctx = document.getElementById('compareChart').getContext('2d'), type = document.getElementById('compareChartSelect').value, selM = getSelMonth(), labels = [], dataPoints = [];
+            if(type === 'worker') { workers.forEach(w => { let wAtt = attendance.filter(a => a && a.workerId === w.id && a.date && a.date.startsWith(selM)); labels.push(w.name); dataPoints.push(calculateEarnedSalary(w, calcEffDays(wAtt), selM) + wAtt.reduce((sum, a) => sum + (a.finalBonus || 0), 0)); });
+            } else if (type === 'machine') { let mProd = {}; attendance.filter(a => a && a.date && a.date.startsWith(selM)).forEach(a => { mProd[a.machine] = (mProd[a.machine] || 0) + (a.qty || 0); }); labels = Object.keys(mProd); dataPoints = Object.values(mProd);
+            } else if (type === 'month') { let mTotals = {}; attendance.forEach(a => { if(a && a.date){ let month = a.date.substring(0,7); let w = workers.find(x => x.id === a.workerId); if(w) { mTotals[month] = (mTotals[month]||0) + (a.finalBonus||0) + (calculateEarnedSalary(w, calcEffDays([a]), month)); } }}); labels = Object.keys(mTotals).sort(); dataPoints = labels.map(l => mTotals[l]); }
+            if(compareChart) compareChart.destroy(); compareChart = new Chart(ctx, { type: type === 'machine' ? 'pie' : 'bar', data: { labels: labels, datasets: [{ label: type === 'worker' ? 'Total Salary Earned' : (type === 'machine' ? 'Total Stitches' : 'Pagar Exp/Month'), data: dataPoints, backgroundColor: ['#10b981','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899'] }] }, options: { responsive: true, maintainAspectRatio: false } });
+        }
+
+        function showUpadModal(wId) {
+            let selM = getSelMonth(); let w = workers.find(x => x.id === wId); let wAdv = advanceData.filter(u => u && u.workerId === wId && u.date && u.date.startsWith(selM));
+            document.getElementById('modalWorkerName').innerHTML = w.name + '<br><span class="text-sm font-normal text-red-100">Advance History: ' + getMonthName(selM) + '</span>';
+            document.getElementById('modalUpadBody').innerHTML = wAdv.map(u => `<tr><td class="p-2 border-b">${u.date}</td><td class="p-2 border-b">${u.note}</td><td class="p-2 border-b text-right font-bold">₹${u.amount}</td></tr>`).join('');
+            document.getElementById('modalUpadTotal').innerText = wAdv.reduce((sum, u) => sum + u.amount, 0); document.getElementById('upadModal').classList.add('active');
+        }
+
+        // ====== COMPANY ANALYSIS & REPORTS ======
+        function setReportType(type) {
+            currentReportType = type; let selM = getSelMonth(); let html = '';
+            document.querySelectorAll('#reports button').forEach(b => { b.classList.replace('bg-indigo-600','bg-white'); b.classList.replace('text-white','text-slate-700'); }); document.getElementById('btn_rep_'+type).classList.replace('bg-white','bg-indigo-600'); document.getElementById('btn_rep_'+type).classList.replace('text-slate-700','text-white');
+            
+            if(type === 'company') {
+                let mAtt = attendance.filter(a => a && a.date && a.date.startsWith(selM)), mAdv = advanceData.filter(u => u && u.date && u.date.startsWith(selM));
+                let tBonus = mAtt.reduce((s, a) => s + (a.finalBonus||0), 0), tUpad = mAdv.reduce((s, u) => s + (u.amount||0), 0), tBase = workers.reduce((s, w) => s + calculateEarnedSalary(w, calcEffDays(mAtt.filter(a=>a.workerId===w.id)), selM), 0);
+                html = `
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div onclick="showAnalysisDetail('base')" class="p-4 bg-indigo-50 rounded-lg cursor-pointer hover:shadow-md border border-indigo-200"><div class="text-xs font-bold text-indigo-700">Base Salary (Tap)</div><div class="text-2xl font-black">₹${tBase.toFixed(0)}</div></div>
+                        <div onclick="showAnalysisDetail('bonus')" class="p-4 bg-emerald-50 rounded-lg cursor-pointer hover:shadow-md border border-emerald-200"><div class="text-xs font-bold text-emerald-700">Total Bonus (Tap)</div><div class="text-2xl font-black">₹${tBonus.toFixed(0)}</div></div>
+                        <div onclick="showAnalysisDetail('upad')" class="p-4 bg-red-50 rounded-lg cursor-pointer hover:shadow-md border border-red-200"><div class="text-xs font-bold text-red-700">Total Advance (Tap)</div><div class="text-2xl font-black text-red-600">₹${tUpad.toFixed(0)}</div></div>
+                        <div onclick="showAnalysisDetail('net')" class="p-4 bg-gray-800 rounded-lg cursor-pointer hover:shadow-md border border-gray-900 text-white"><div class="text-xs font-bold text-gray-300">Net Payable (Tap)</div><div class="text-2xl font-black">₹${((tBase+tBonus)-tUpad).toFixed(0)}</div></div>
+                    </div>`;
+            } else if(type === 'worker') {
+                html = workers.map(w => {
+                    let wA = attendance.filter(a => a && a.workerId === w.id && a.date && a.date.startsWith(selM)), wU = advanceData.filter(u => u && u.workerId === w.id && u.date && u.date.startsWith(selM));
+                    let eff = calcEffDays(wA), base = calculateEarnedSalary(w, eff, selM), bon = wA.reduce((s, a) => s + (a.finalBonus || 0), 0), tUpd = wU.reduce((s, u) => s + u.amount, 0), pichlaBaki = calculatePreviousBalance(w, selM), net = (base + bon) - tUpd + pichlaBaki;
+                    return `<div class="border rounded-lg mb-3">
+                        <div class="bg-slate-50 p-4 flex justify-between cursor-pointer" onclick="document.getElementById('det_${w.id}').classList.toggle('hidden')">
+                            <div><h3 class="font-bold text-lg">${w.name}</h3><span class="text-xs">Prev Due: ${pichlaBaki >= 0 ? '+' : '-'}₹${Math.abs(pichlaBaki).toFixed(0)} | Net Payable: ₹${net.toFixed(0)}</span></div><div class="text-indigo-600"><i class="fa-solid fa-chevron-down"></i></div>
+                        </div>
+                        <div id="det_${w.id}" class="hidden p-4 border-t bg-white">
+                            <button onclick="downloadWorkerPDF('${w.id}')" class="mb-4 bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-bold"><i class="fa-solid fa-file-pdf"></i> Download PDF A4</button>
+                            <div class="overflow-x-auto"><table class="w-full text-sm text-left border"><thead class="bg-gray-100"><tr><th class="p-2">Date</th><th class="p-2">Details</th><th class="p-2 text-right">Bonus (₹)</th></tr></thead>
+                            <tbody>${wA.length ? wA.map(a=>`<tr class="border-b"><td class="p-2">${a.date}</td><td class="p-2">${a.status} (${a.machine!=='NONE'?a.machine:'Fixed Worker'})<br><span class="text-xs text-red-500">${a.note!=='-'?a.note:''}</span></td><td class="p-2 text-right font-bold text-emerald-600">₹${(a.finalBonus||0).toFixed(0)}</td></tr>`).join('') : `<tr><td colspan="3" class="p-2 text-center">No Data</td></tr>`}</tbody></table></div>
+                        </div></div>`;
+                }).join('');
+            }
+            document.getElementById('reportRenderArea').innerHTML = html;
+        }
+
+        function showAnalysisDetail(type) {
+            let selM = getSelMonth(), mAtt = attendance.filter(a => a && a.date && a.date.startsWith(selM)), mAdv = advanceData.filter(u => u && u.date && u.date.startsWith(selM)); let title = "", head = "", body = "";
+            if(type === 'base') { title = "Base Salary Details (" + getMonthName(selM) + ")"; head = "<tr><th class='p-2'>Worker Name</th><th class='p-2'>Effective Days</th><th class='p-2 text-right'>Base Salary (₹)</th></tr>"; body = workers.map(w => { let eff = calcEffDays(mAtt.filter(a => a.workerId === w.id)), base = calculateEarnedSalary(w, eff, selM); if(base > 0) return `<tr class='border-b'><td class='p-2 font-bold'>${w.name}</td><td class='p-2'>${eff}</td><td class='p-2 text-right font-bold text-indigo-700'>₹${base.toFixed(0)}</td></tr>`; return ""; }).join('');
+            } else if(type === 'bonus') { title = "Bonus Distribution Details (" + getMonthName(selM) + ")"; head = "<tr><th class='p-2'>Date</th><th class='p-2'>Worker</th><th class='p-2'>Machine / Design</th><th class='p-2 text-right'>Bonus (₹)</th></tr>"; body = mAtt.filter(a => a.finalBonus > 0).sort((a,b)=>new Date(b.date)-new Date(a.date)).map(a => `<tr class='border-b'><td class='p-2'>${a.date}</td><td class='p-2 font-bold'>${(workers.find(w=>w.id===a.workerId)||{}).name || 'Unknown'}</td><td class='p-2'>${a.machine!=='NONE'?a.machine:'-'} / ${a.design}</td><td class='p-2 text-right text-emerald-600 font-bold'>₹${a.finalBonus.toFixed(0)}</td></tr>`).join('');
+            } else if(type === 'upad') { title = "Advance (Upad) Details (" + getMonthName(selM) + ")"; head = "<tr><th class='p-2'>Date</th><th class='p-2'>Worker</th><th class='p-2'>Reason</th><th class='p-2 text-right'>Amount (₹)</th></tr>"; body = mAdv.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(u => `<tr class='border-b'><td class='p-2'>${u.date}</td><td class='p-2 font-bold'>${(workers.find(w=>w.id===u.workerId)||{}).name || 'Unknown'}</td><td class='p-2'>${u.note}</td><td class='p-2 text-right text-red-600 font-bold'>₹${u.amount.toFixed(0)}</td></tr>`).join('');
+            } else if(type === 'net') { title = "Net Company Payable (" + getMonthName(selM) + ")"; head = "<tr><th class='p-2'>Worker Name</th><th class='p-2 text-right'>Base + Bonus</th><th class='p-2 text-right text-red-500'>Upad</th><th class='p-2 text-right'>Net Payable (₹)</th></tr>"; body = workers.map(w => { let wA = mAtt.filter(a => a.workerId === w.id), eff = calcEffDays(wA), base = calculateEarnedSalary(w, eff, selM), bon = wA.reduce((s, a) => s + (a.finalBonus||0), 0), upd = mAdv.filter(u => u.workerId === w.id).reduce((s, u) => s + (u.amount||0), 0), net = (base + bon) - upd; if(net !== 0) return `<tr class='border-b'><td class='p-2 font-bold'>${w.name}</td><td class='p-2 text-right'>₹${(base+bon).toFixed(0)}</td><td class='p-2 text-right text-red-500'>-₹${upd.toFixed(0)}</td><td class='p-2 text-right text-gray-800 font-bold'>₹${net.toFixed(0)}</td></tr>`; return ""; }).join(''); }
+            document.getElementById('analysisModalTitle').innerText = title; document.getElementById('analysisModalHead').innerHTML = head; document.getElementById('analysisModalBody').innerHTML = body || "<tr><td colspan='4' class='text-center p-4'>No Data Found.</td></tr>"; document.getElementById('analysisModal').classList.add('active');
+        }
+
+        // PDF Generation
+        function downloadWorkerPDF(wId) {
+            let selM = getSelMonth(), w = workers.find(x => x.id === wId);
+            let wA = attendance.filter(a => a && a.workerId === wId && a.date && a.date.startsWith(selM)).sort((a,b) => new Date(a.date) - new Date(b.date)); 
+            let wU = advanceData.filter(u => u && u.workerId === wId && u.date && u.date.startsWith(selM));
+            
+            let eff = calcEffDays(wA), base = calculateEarnedSalary(w, eff, selM), bon = wA.reduce((s, a) => s + (a.finalBonus || 0), 0), tUpd = wU.reduce((s, u) => s + (u.amount || 0), 0), pichlaBaki = calculatePreviousBalance(w, selM);
+            
+            document.getElementById('slip_month').innerText = getMonthName(selM); document.getElementById('slip_name').innerText = w.name; document.getElementById('slip_rule').innerText = w.rule; document.getElementById('slip_salary').innerText = w.fixSalary; document.getElementById('slip_days').innerText = eff;
+            
+            document.getElementById('slip_daily_logs').innerHTML = wA.length === 0 ? `<tr><td colspan="6" style="text-align:center;">No Data.</td></tr>` : wA.map(a => {
+                let stat = a.status || 'Full'; let dayBase = 0; let isM = (a.machine && a.machine !== 'NONE'); let detStr = !isM ? 'Fixed Salary Worker' : `${a.machine} / ${a.design}`; let qtyStr = !isM ? '-' : `Fr:${a.frame||0}, ${a.qty} st`;
+                if(stat !== 'Absent') { let d = getDaysInMonth(selM), div = d; if(w.rule === 'SundayOff') { let s=0; let [y,m]=selM.split('-'); for(let i=1;i<=d;i++){if(new Date(y,m-1,i).getDay()===0)s++;} div = d-s; } else if (w.rule === '2Leaves') div = d-2; let fullDaySal = (w.fixSalary / (div<=0?1:div)); dayBase = stat === 'Full' ? fullDaySal : fullDaySal / 2; if(a.mode === 'ExtraStitch' || a.mode === 'ExtraPagar') dayBase = 0; }
+                return `<tr><td>${a.date}</td><td>${detStr}<br><span style="font-size:11px;">(${a.status}, ${a.mode})</span></td><td>${qtyStr}</td><td>₹${dayBase.toFixed(0)}</td><td>₹${(a.finalBonus||0).toFixed(0)}</td><td style="color:red; font-size:12px;">${a.note!=='-'?a.note:''}</td></tr>`;
+            }).join('');
+            
+            document.getElementById('slip_base').innerText = '₹' + base.toFixed(0); document.getElementById('slip_bonus').innerText = '₹' + bon.toFixed(0); 
+            let prevEl = document.getElementById('slip_prev'); prevEl.innerText = (pichlaBaki >= 0 ? '+' : '') + '₹' + pichlaBaki.toFixed(0); prevEl.style.color = pichlaBaki >= 0 ? '#4f46e5' : 'red';
+            document.getElementById('slip_upad').innerText = '-₹' + tUpd.toFixed(0); document.getElementById('slip_net').innerText = '₹' + ((base + bon) - tUpd + pichlaBaki).toFixed(0);
+            
+            let el = document.getElementById('payslip-container'); el.style.display = 'block';
+            html2pdf().set({ margin: 10, filename: `${w.name}_Payslip_${selM}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(el).save().then(() => { el.style.display = 'none'; });
+        }
+        function showToast(msg) { let t = document.getElementById('toast'); document.getElementById('toastMsg').innerText = msg; t.classList.remove('opacity-0'); setTimeout(() => t.classList.add('opacity-0'), 3000); }
+        initApp();
+    </script>
+</body>
+</html>
